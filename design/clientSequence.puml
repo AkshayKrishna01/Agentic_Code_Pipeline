@@ -1,0 +1,832 @@
+@startuml agentic_code_pipeline_sequence_diagram
+!theme plain
+
+skinparam sequenceArrowThickness 2
+skinparam roundcorner 10
+skinparam sequenceParticipant underline
+skinparam backgroundColor #FAFAFA
+skinparam sequenceBoxBackgroundColor #EEF2FF
+skinparam noteBackgroundColor #FFF9C4
+skinparam noteBorderColor #F0C000
+
+title  Chatbot - Detailed Sequence Diagram
+
+participant "User" as User 
+participant "src/main.py" as Main
+participant "src/routes/route.py" as Router
+participant "src/services/service.py" as Service
+participant "src/agent/code_agent.py" as CoderAgent
+participant "src/agent/review_agent.py" as ReviewAgent
+participant "src/agent/research_agent.py" as ResearchAgent
+participant "src./utils/helper.py" as Utils
+participant "src/repository/repository.py" as Repository
+participant "src/models/models.py" as Model
+participant "src/repository/Database/Database_connection.py" as Database
+participant "src/repository/schema/schema.py" as Schema
+participant "src/settings/settings.py" as Settings
+
+autonumber 1.1
+
+note over Main
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
+import logging
+import asyncio
+import selectors
+from .settings.settings import settings
+from .routes.routes import router
+from .repository.Database.Database_connection import Database
+from .migration.migration import Migration
+end note
+
+note over Router
+from fastapi import APIRouter, Response
+from typing import Any
+import uuid
+from ..models.models import  PipelineResponse, PipelineRequest
+from ..services.service import CodePipelineService
+from ..utils.helper import error_response,log_error
+from ..agent.code_agent import CodeAgent
+from ..agent.review_agent import ReviewAgent
+from ..agent.research_agent import ResearchAgent
+end note
+
+note over Model
+from typing import Optional, TypedDict 
+from datetime import datetime
+from pydantic import BaseModel, field_validator
+end note
+
+note over Service
+from langgraph.graph import StateGraph, START, END
+from langchain_core.messages import HumanMessage
+from ..models.models import AgentState
+from ..utils.helper import (success_response,error_response,log_error,)
+from ..utils.error_codes.error_codes import ApplicationError
+from ..utils.helper import get_llm
+from langgraph.graph import StateGraph, START, END
+from langchain_core.messages import HumanMessage
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from ..constant.constant import DB_URI
+end note
+
+note over CoderAgent
+import logging
+from langchain_core.messages import HumanMessage
+from langchain.agents import create_agent
+from .system_prompts import System_prompt
+from ..utils.helper import get_llm,log_error
+end note
+
+note over ReviewAgent
+import boto3
+from langchain_aws import ChatBedrock
+from dotenv import load_dotenv
+from langgraph.prebuilt import create_react_agent
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from .system_prompt import SYSTEM_PROMPT
+end note
+
+note over ResearchAgent
+import logging
+from langchain_core.messages import HumanMessage
+from langchain.agents import create_agent
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_mcp_adapters.tools import load_mcp_tools
+from .system_prompts import System_prompt
+from ..utils.helper import get_llm,log_error
+from ..constant.constant import DB_URI
+from ..settings.settings import settings
+end note
+
+
+note over Repository
+from sqlalchemy.orm import Session
+from ..repository.Database.Database_connection import Database
+from ..utils.error_codes.error_codes import Database_error
+from ..utils.logger import logger
+from .schema.schema import (ErrorLogs)
+
+end note
+
+note over Database
+from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.orm import sessionmaker
+from ...settings.settings import settings
+end note
+
+note over Utils
+from datetime import datetime, timezone
+from ..models.models import APIResponse
+from typing import Dict,Optional,Any
+import traceback
+import logging
+from dotenv import load_dotenv
+from langchain_aws import ChatBedrock
+import boto3
+import os
+from ..models.models import Error
+from datetime import datetime, timezone
+load_dotenv()
+end note
+
+note over Schema
+from __future__ import annotations
+import uuid
+from sqlalchemy import (Column, String, Integer, Boolean,DateTime,text)
+from sqlalchemy.orm import  declarative_base
+end note 
+
+note over Settings
+from dataclasses import dataclass
+import os
+from dotenv import load_dotenv
+end note
+
+note over Migration
+from sqlalchemy import inspect
+from ..repository.schema.schema import ErrorLogs
+from ..repository.database.database_connection import Database
+end note
+
+activate Main
+group func run_local_server()
+    group func initialize_config()
+        group try Block
+            Main -> Settings: Load Configuration from the settings
+            activate Settings
+            Settings -> Main: configuration will be sent to Main
+            deactivate Settings
+            Main -> Database: Initialize the Database by creating a instance
+            activate Database
+            Database -> Database: the init_db() is getting triggered engine initialized
+            Database -> Database: initialize the session factory with the engine and set autoflush and autocommit to False
+            Database --> Main: engine and session maker are initialized and ready
+            deactivate Database
+            Main -> Main: Setting log level for logging all operation of backend
+            Main -> Main: return true to the run_local_server
+        end 
+        group except Block
+            Main -> Main: If any Exception caught return false to the run_local_server
+        end 
+    end 
+
+    alt **[Configuration initialization Failed]**
+        Main -> Main: Initialization Failed application startup aborted
+    end 
+    Main->Database:call the test_connection function of db_connection
+    activate Database
+    group func db_connection()
+        group try Block
+            Database->Database:using the engine execute a select 1 query to test the db connection
+            Database-->Database:return true after successfull connection test
+        end 
+        group except Block
+         Database-->Database:return the false to main
+        end 
+    end 
+    Database-->Main:return true or false
+    deactivate Database
+    alt **[db connection test failed]**
+        Main->Main:Data Base connection failed aborted application start up
+    end
+    group try Block
+        Main -> Migration: Create a instance of the Migration pass the Database class
+        activate Migration
+        Migration --> Main: Instance for Migration created, initialized Database and engine and passed to Main
+        Main -> Migration: call the create_tables() method using the instance
+        group func create_tables()
+            group for Block
+                Migration -> Migration: Iterate over all tables in array of table_order_creation
+                alt **[Check the table exist if Not]**
+                    Migration -> Migration: create table using engine
+                end 
+            end 
+        end 
+    end 
+    group Exception Block
+        Main->Main:log in console as Migration failed
+    end 
+    deactivate Migration
+    Main->Main:create a variable app and store the result of create_app
+    group func create_app()
+        Main -> Main: FastApi app instance is created with title="Chatbot Api" version="1.0.0" and lifespan context manager attached
+        Main -> Main: Register CORSMiddleware with (allowed_origins=["*"], methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+        Main -> Main: Add the Exception handlers
+        Main -> Router: calling app include_router(router, prefix="/api/v1", tags=["Chatbot"])
+        activate Router
+        Router -> Router: the include_router() is getting triggered routes are included
+        Router --> Main: All Router registered successfully and now active and accept requests
+        Main -> Main: Executes uvicorn.run() with host address, port, reload=true, log level configuration to start asgi server
+        Main->Main : app instance will be returned
+    end 
+    Main->Main:using asyncio's run method run the serve method and run it in selectorEventLoop
+    group func serve()
+        Main->Main:configure the uvicorn with app instance in specified port and host,set reload to false, configure the log level and set access log to true
+        Main->Main:create a variable server and store the initiliaized uvicorn with configuration
+        Main->Main:run the server 
+    end group
+end 
+User -> Main: Request **POST /api/v1/agentic/pipeline/code **\n{"user_query":"Give me a code in python for adding two number which will be given by user","user_id":"1"}
+
+Main -> Router: Forward request to respective router defined endpoint
+
+group func chatbot()
+    Router -> Model: pass request payload to PipelineRequest model
+    activate Model
+    Model -> Model: validate user_query and user_id field
+    group func validate_user_query()
+        Model -> Model: Check if user_query is non-empty string else raise value error
+    end 
+    group func validate_user_id()
+        Model -> Model: Check if user_id is non-empty string else raise value error
+    end     
+    Model --> Router: return validated payload
+    deactivate Model
+    group try block
+        Router -> Router: generate request_id using uuid and store it in request_id variable
+        Router->Router:create a instance of service pass the dependencies such as CodeAgent,ReviewAgent and ResearchAgent
+        Router -> Service: call chat_bot pass the user_query,user_id and request_id and store the result in result variable
+        activate Service
+        group Service init()
+                    Service->CoderAgent:code agent class get initialized and stored in self.code_agent
+                    activate CoderAgent
+                    group func CoderAgent init()
+                    CoderAgent->Utils:call the util method of get_llm() and get the llm initialized and store it in self.llm
+                    activate Utils
+                    group get_llm()
+                                Utils-->Utils:return the ChatBedrock llmm with configuration of respective model id ,provider and llm parameter and get boto3 client for that from get_bedrock_client
+                                group _get_bedrock_client()
+                                    Utils -->Utils:return the boto3 client for bedrock runtime
+                                end 
+                    end  
+                    Utils-->CoderAgent:return the llm instance                  
+                    deactivate Utils
+                    CoderAgent->CoderAgent:get the system prompt for coder agent and store it in self.prompt
+                    note over CoderAgent
+                        <ROLE>
+                        You are a senior Python Software Engineer who writes clean, secure, pylint-compliant, and maintainable code
+                        </ROLE>
+
+                        <OBJECTIVE>
+                        Generate fully working, production-ready Python code that solves the user request
+                        The code must pass pylint checks and achieve a review score higher than 6
+                        Strictly apply any if provided any context or feedback
+                        </OBJECTIVE>
+
+                        <INSTRUCTIONS>
+                        1. Analyze the request carefully
+                        2. Follow provided context strictly
+                        3. Produce complete, executable Python code
+                        4. Apply Python best practices
+                        5. Include proper error handling
+                        6. Keep code minimal but complete
+                        7. Ensure pylint compliance
+                        </INSTRUCTIONS>
+
+                        <PYLINT_REQUIRED_STANDARDS>
+                        - Always include a module-level docstring and for the Classes ,Public methods ,Functions
+                        - Use type annotations for all function parameters and return values
+                        - Ensure file ends with a final newline
+                        - Keep lines within standard length limits
+                        - Avoid unnecessary negations and complex boolean expressions
+                        - Use correct and existing APIs for imported libraries
+                        - Avoid unused imports and variables
+                        - Avoid example or executable code outside functions/classes
+                        </PYLINT_REQUIRED_STANDARDS>
+
+                        <FEW_SHOT>
+
+                        <User>
+                        Write a Python function to check if a number is even.
+                        </User>
+
+                        <Assistant>
+                        ```python
+                        \"\"\"Utility functions for numeric validation.\"\"\"
+
+                        def is_even(number: int) -> bool:
+                            \"\"\"
+                            Determine whether a number is even.
+
+                            Args:
+                                number (int): The number to evaluate.
+
+                            Returns:
+                                bool: True if the number is even, False otherwise.
+
+                            Raises:
+                                TypeError: If the input is not an integer.
+                            \"\"\"
+                            if not isinstance(number, int):
+                                raise TypeError("Input must be an integer")
+
+                            return number % 2 == 0
+                            ```
+                            </FEW_SHOT>
+                            <constraints>
+                            - Do not explain anything
+                            - Do not output text outside code
+                            - Output must be a single code block only
+                            - Use correct language tag
+                            </constraints>
+                            <output>
+                            Return ONLY the final code inside one markdown code block.
+                            </output>
+                    end note
+                    end 
+                    CoderAgent -->Service: instance of coder agent will be returned
+                    deactivate CoderAgent
+                    Service->ReviewAgent:review agent class get initialized and stored in self.review_agent
+                    activate ReviewAgent
+
+                     group func ReviewAgent init()
+                        activate Utils
+                        ReviewAgent->Utils:call the get_llm method of util get the llm initialized and store it in self.llm variable
+                        deactivate Utils
+                        ReviewAgent->ReviewAgent:get the system prompt for review agent and store it in self.prompt
+                        note over ReviewAgent
+                            <ROLE>
+                            You are  Code Reviewer and Software Architect
+                            You are the final quality gate
+                            </ROLE>
+                            
+                            <OBJECTIVE>
+                            Strictly evaluate the provided code 
+                            as the authoritative source for Python standards 
+                            using pylint mcp server
+                            </OBJECTIVE>
+
+                            <INSTRUCTIONS>
+                            1. Analyze the code thoroughly
+                            2. Identify logic errors, edge cases, or bad practices
+                            3. Do NOT modify or rewrite the code
+                            4. FAIL if ANY issue exists
+                            </INSTRUCTIONS>
+                            
+                            <FEW_SHOT>
+                            
+                            <Input>
+                            ```python
+                            def add(a, b):
+                                return a + b
+                            ```
+                            </Input>
+                            
+                            <Assistant>
+                            {
+                            "review_status": "fail",
+                            "review_comment": "Missing type hints and input 
+                            validation."
+                            }
+                            </Assistant>
+                            
+                            <Input>
+                            ```python
+                            def add(a: int, b: int) -> int:
+                                return a + b
+                            ```
+                            </Input>
+                            
+                            <Assistant>
+                            {
+                            "review_status": "pass",
+                            "review_comment": "Code is correct, minimal, and follows 
+                            best practices."
+                            }
+                            </Assistant>
+                            
+                            </FEW_SHOT>
+                            
+                            <OUTPUT_FORMAT>
+                            {
+                            "review_status": "pass" | "fail",
+                            "review_comment": "Clear justification of the decision"
+                            }
+                            </OUTPUT_FORMAT>
+                            
+                            <CONSTRAINTS>
+                            - Output MUST be valid JSON only
+                            - Do not generate code
+                            - Do not add extra text
+                            </CONSTRAINTS>
+                        end note
+                        ReviewAgent->ReviewAgent:get the pylint_workspace path and store it in self.pylint_workspace
+                    end 
+                    ReviewAgent -->Service: instance of review agent will be returned
+                    deactivate ReviewAgent
+                    Service->ResearchAgent:research agent class get initialized and stored in self.research_agent
+                    activate ResearchAgent
+                    group func ResearchAgent init()
+                        activate Utils
+                        ResearchAgent->Utils:call the get_llm method of util get the llm initialized and store it in self.llm variable
+                        deactivate Utils
+                        note over ResearchAgent
+                            <ROLE>
+                            You are a Technical Researcher
+                            You specialize in researching official documentation, 
+                            best practices, and correct design patterns using the 
+                            duckduckgo MCP Server
+
+                            </ROLE>
+                            
+                            <OBJECTIVE>
+                            Provide precise theoretical and architectural context
+                            required to generate correct, secure, and high-quality code
+                            </OBJECTIVE>
+                            
+                            <INSTRUCTIONS>
+                            1.Analyze the user query or reviewer feedback
+
+                            2.Identify relevant concepts
+                            3.Provide only theoretical and architectural guidance
+                            </INSTRUCTIONS>
+                            
+                            <CONSTRAINTS>
+                            - NEVER generate final implementation code
+                            - NEVER provide full code examples
+                            - Keep explanations brief and relevant
+
+                            </CONSTRAINTS>
+                            
+                            <OUTPUT>
+                            Plain text only (theory)
+                            </OUTPUT>
+                        end note
+                        ResearchAgent->ResearchAgent:get the system prompt for research agent and store it in self.prompt
+                    end 
+                    ResearchAgent -->Service: instance of research agent will be returned
+                    deactivate ResearchAgent
+                    activate Utils
+                    Service->Utils:call the get_llm method of util get the llm initialized and store it in self.llm variable                
+                    deactivate Utils
+                    Utils-->Service:Bedrock llm will be initilaized and returned
+                    Service->Service:get the db_uri from constant and store it in self.db_uri
+        end  
+group func code_pipeline()
+    
+    group try block
+        Service->Service:creates a checkpoint using db_uri
+        Service->Service:set up the checkpointer where tables for checkpoint will be created if not exist
+        Service->Service: create a variable config have thread_id as configurable value
+        Service->Service:initialize state dictionary set state of user_query to user_query,thread_id to thread_id,code, context ,review ,status,route to empty string and retries to 0 and store it in agent_state variable
+        Service->Service:call the built_graph method and store the result of compiled graph in self.graph
+        group func _build_graph()
+                group try Block
+                    Service->Service:create StateGraph(AgentState) object and store it in variable workflow
+                    group func decision_node(state)
+                        Service->Service:invoke the llm in async manner with prepared  classification prompt with user_query and store the response in response variable
+                        note over Service
+                            Classify the user request into one of the categories below.
+                            Categories:
+                            - greet → greetings or small talk (hi, hello, hey, good morning, how are you, etc.)
+                            - research → explanation needed or external knowledge about a library, language, or framework
+                            - code → user asks to generate code directly
+                            - review → user provides code and asks for review
+                            - invalid → request is unclear, irrelevant, or asks for code review without providing code
+
+                            Rules:
+                            - If the message is a greeting or casual talk -> return greet
+                            - If user asks for review but provides no code -> invalid
+                            - If query does not fit any category -> invalid
+                            - Greetings must NEVER be classified as invalid
+
+                            Output format:
+                            - For greet / research / code / review → return ONLY ONE WORD
+                            - For invalid -> return in this exact format:
+                            invalid: <clear reason>
+
+                            Examples:
+                            - Hi -> greet
+                            - Review my code -> invalid: asked for code review but no code was provided
+                            - Write a Python code for adding two number -> code
+                        end note
+                        Service->Service:extract content from response and normalize that using strip() and lower() and store it in response variable
+                        alt **[response is greet]**
+                            Service->Service: set the route of state to greet and code as Hello there! How can I assist you with code development
+                        else **[if  decision is not  in any of this research, code, review,greet]**
+                            Service->Service:return by updating the route of state as invalid and code as response
+                        else **[ response is review]**
+                            Service->Service:set the code state as user_query
+                        end
+                        Service->Service:update state of route to response  and return updated state
+                    end 
+
+                    group func research_node(state)
+                        Service->Service: call the ask method of research agent and pass user query  and review extract from state, store the response in context variable
+                        Service->Service:update state of context to context we got and return updated state
+                    end 
+
+                    group func code_node(state)
+
+                        Service->Service: call the ask method of code agent and pass user query ,context and review extracted from state ,store the response in code variable
+                        Service->Service:update state of code to code we got and return updated state
+
+                    end 
+
+                    group func review_node(state)
+                        Service->Service: call the ask method of review tool and pass user query  and thread _id extract from state store the response in code variable
+                        Service->Service: Initialize a variable status to fail
+                        alt **[check review response content that it contains word like error or fix]**
+                            Service->Service:set the status to fail
+                        end 
+        
+                        alt **[status is  fail]**
+                            Service->Service:increment retries to  retries plus one which got from state
+                        end alt
+                        Service->Service:update state of review to new review ,update state of status to new review status,update the retires of state with new retries 
+                        Service-->Service:return updated state
+
+                    end 
+
+                    Service->Service:add node decide with decide_node to workflow graph
+                    Service->Service:add node  research  with research_node to workflow graph
+                    Service->Service:add node  code  with code_node to workflow graph
+                    Service->Service:add node  review  with review_node to workflow graph
+
+                    Service->Service:add edge START as decide to workflow graph
+
+                    group func decide_route(state)
+                        Service->Service:read state of route and return route value
+                    end 
+
+                    Service->Service:add conditional edges from decide to code,review or research or END for greet and invalid based on the decide route function returns
+                    Service->Service:add edge goes from research to  code
+                    Service->Service:add edge goes from code to review
+
+                    group func review_route(state)
+
+                        alt **[status is fail AND retries less than 3]**
+                            Service-->Service:return "research" 
+                        else **[status is  pass OR retries greater or equal to 3]**
+                            Service-->Service:return END
+                        end
+
+                    end 
+                    Service->Service:add conditional edges from review goes to research node or terminate(end) based on result of review_route function
+                    Service->Service:compile graph into executable workflow object with checkpointer
+                end 
+                group except
+                    activate Utils
+                        Service->Utils:call the log error function and pass the file name,function name and exception
+                    deactivate Utils  
+                    Service-->Service:raise a error 
+                end 
+        end 
+    
+        alt **[if user asked to generate a code]**
+                    activate CoderAgent
+                    
+                    group func ask()
+                    group try
+                        CoderAgent -> CoderAgent: call _run_agent and pass  question,context,review and store the result in final variable
+                        group func _run_agent()
+                        group try
+                            CoderAgent -> CoderAgent: create LangChain agent provide model, empty list as tool and system prompt 
+                            CoderAgent -> CoderAgent: invoke agent with HumanMessage as question ,context and review
+                            CoderAgent -> CoderAgent: extract final message content from response and store it in final_content
+                            CoderAgent --> CoderAgent: return the final_content
+                        end 
+                        group except
+                            activate Utils
+                                CoderAgent->Utils:call the log error function and pass the file name,function name and exception
+                            deactivate Utils  
+                            CoderAgent -> CoderAgent:raise a exception 
+                        end
+                        end 
+
+                        CoderAgent --> CoderAgent: return final response
+                    end 
+                    group except
+
+                        activate Utils
+                                CoderAgent->Utils:call the log error function and pass the file name,function name and exception
+                        deactivate Utils                    
+                        CoderAgent -> CoderAgent:raise a exception 
+                    end 
+                end 
+                end
+                CoderAgent --> Service: return final response
+                deactivate CoderAgent
+                alt **[if wanted code review]**
+                    activate ReviewAgent
+                    group func ask()
+                    group try
+                        ReviewAgent ->ReviewAgent:create a variable temp_file and store the path of pylint workspace use Path function for coversion of string to path
+                        ReviewAgent->ReviewAgent:create a variable as lines and split the given code into lines using splitlines method and store it in lines
+                        alt **[len of the lines greater than 2]**
+                            ReviewAgent->ReviewAgent:remove the first and last line of lines and store it in trimmed_code
+                        else
+                            ReviewAgent->ReviewAgent:store the lines as it is in trimmed_code
+                        end 
+                        ReviewAgent->ReviewAgent:using write_text method create file or over code in the specified path and encode it by utf-8
+                        ReviewAgent->ReviewAgent: for correct file handling convert the file path to file path with forwars stashes using as_posix() 
+                        ReviewAgent -> ReviewAgent: create MultiServerMCPClient with server config such as transport mode as streamable_http and url
+                        ReviewAgent -> ReviewAgent: open async session as pylint-server
+                        ReviewAgent -> ReviewAgent: load_mcp_tools() using session and store it in tools variable
+                        note over ReviewAgent
+                        Pylint MCP is an MCP (Model Context Protocol) server designed to
+                        perform code quality checks using Pylint. It enables developers to
+                        analyze Python code for syntactic errors and style issues
+                        Tools:
+                        run_pylint_cmd — checks code quality, style, errors on a file/folder
+                        run_symilar_cmd — finds duplicate or similar code blocks
+                        run_full_report — runs both pylint and symilar together in one call
+                        run_pyreverse_cmd — generates UML class diagrams
+                        end note
+                        ReviewAgent -> ReviewAgent: call _run_agent and pass question ,tools list ,file_path and store it in response variable
+                        group func _run_agent()
+                        group try
+                            ReviewAgent -> ReviewAgent: create LangChain agent provide model, tools and system prompt
+                            ReviewAgent -> ReviewAgent: invoke agent with HumanMessage as question and instruction with file_path
+                            ReviewAgent -> ReviewAgent: extract final message content from response and store it in final_content
+                            ReviewAgent -> ReviewAgent: return the final_content
+                        end 
+                        group except
+                            activate Utils
+                                ReviewAgent->Utils:call the log error function and pass the file name,function name and exception
+                            deactivate Utils
+                            ReviewAgent -> ReviewAgent:raise a exception 
+                        end 
+                        end 
+                        ReviewAgent->ReviewAgent:return the response as string
+                    end 
+                    group except 
+                        activate Utils
+                            ReviewAgent->Utils:call the log error function and pass the file name,function name and exception
+                        deactivate Utils
+                        ReviewAgent -> ReviewAgent:raise a exception 
+                    end 
+                end 
+                end
+                ReviewAgent-->Service:return the response 
+                deactivate ReviewAgent
+                alt **[if wanted to research about anything library or concepts]**
+                    activate ResearchAgent
+                    group func ask()
+                    group try
+
+                        ResearchAgent -> ResearchAgent: create MultiServerMCPClient with server config
+                        ResearchAgent -> ResearchAgent: open async session as duckduckgo
+
+                        ResearchAgent -> ResearchAgent: load_mcp_tools() using session and store it in tools
+                        note over ResearchAgent
+                            The DuckDuckGo MCP server is a Model Context Protocol (MCP) 
+                            server that connects DuckDuckGo’s search engine with AI agents 
+                            allowing structured, programmatic web searches and content
+                            fetching
+                            Tools:
+                            search — searches DuckDuckGo and returns titles, URLs, and snippets
+                            fetch_content — fetches and extracts text from a webpage URL
+                        end note
+                        ResearchAgent -> ResearchAgent: call _run_agent and pass question, review_comments and tools list
+
+                        group func _run_agent()
+                        group try
+                            ResearchAgent -> ResearchAgent: create LangChain agent provide model, tools and system prompt
+                            ResearchAgent -> ResearchAgent: invoke agent with HumanMessage as question and review comment
+                            ResearchAgent -> ResearchAgent: extract final message content from response and store it in final_content
+                            ResearchAgent --> ResearchAgent: return final_content 
+                        end 
+                        group except
+                            activate Utils
+                                ResearchAgent->Utils:call the log error function and pass the file name,function name and exception
+                            deactivate Utils
+                            ResearchAgent -> ResearchAgent:raise a exception 
+                        end 
+                    end 
+                        ResearchAgent-->ResearchAgent:return the final response 
+                    end 
+                    group except
+                        activate Utils
+                        ResearchAgent->Utils:call the log error function and pass the file name,function name and exception
+                        deactivate Utils
+                        ResearchAgent -> ResearchAgent:raise a exception 
+                    end 
+                end 
+                deactivate ResearchAgent
+                end
+                ResearchAgent-->Service:return the final response to the service
+        Service->Service:invoke compiled graph with agent_state and config
+        Service->Service:get the code from state and store it in final reponse
+        Service->Service:Form a dictionary consist of output_code as key and final_response as value
+        Service ->Utils: Create success Response using success_reponse function pass the status="success",code="200",message="Codepipeline response generated"" and data and request_id
+        activate Utils
+        activate Model
+            group func success_reponse()
+                Utils -> Model:Make use of API Response model to create a success response pass all data to the model
+                Model --> Utils: Return the model with thee respective data to the router
+                Utils --> Utils: return the success response 
+            end 
+        deactivate Model
+        Utils --> Service: return the success response 
+        deactivate Utils
+        Service -->Service : return the model got from success_response to the router            
+    end 
+
+    group ApplicationError Block
+        activate Utils
+            Service->Utils:call the log error function and pass the file name,function name and exception
+                            group func log error()
+                            activate Repository
+                                            Utils->Repository:create a repository instance and store it in repo variable
+                                            Utils->Utils: convert the exception to string and store it in error_message variable
+                                            Utils->Utils: get the stack_trace from traceback and store it in stack_trace variable
+                                            Utils->Utils:get the full error message with error_message and stack trace
+                                            Utils->Repository: call the store_error method of repo and pass the file name, function name and full error
+                                    group func store_error()
+                                    Repository -> Repository: initialize session variable to None
+                                    group try Block
+                                            Repository -> Repository: call _get_session() and store result in session variable
+                                            Repository -> Model: create a variable log and store the result of  ErrorLogs model pass the respective values to that
+                                            activate Session
+                                            activate Model
+                                                Model-->Repository: a model is created with respective data and pass it to repository
+                                            deactivate Model
+                                            Repository->Session: add the log to the Database
+                                            note over Session
+                                                session.add(log)
+                                            end note
+                                        Repository->Repository: commit the session to save the changes
+                                    end
+                                    group except Block
+                                        Repository -> Repository: rollback session, raise Database_error as Failed to log error
+                                    end 
+                                    group finally Block
+                                        Repository -> Session: close session if open
+                                        deactivate Session
+                                    end 
+                                deactivate Repository
+                    end   
+            end
+                    
+        deactivate Utils
+        Service -> Utils: send the  error to the user, generated using error_response function
+        activate Utils
+        activate Model
+            group func error_reponse()
+                Utils -> Model:Make use of API Response model to create a error response pass all data to the model
+                Model --> Utils: Return the model with thee respective data to the router
+                Utils --> Utils: return the error response 
+            end 
+        deactivate Model
+        Utils --> Service: return the error response 
+        deactivate Utils
+        end 
+        group except Block
+                activate Utils
+                Service->Utils:call the log error function and pass the file name,function name and exception
+                Service -> Utils: send the  error to the user generated using error_response function
+                deactivate Utils
+        end
+        end 
+        Service -->Router : return the response to the router            
+
+            deactivate Service
+            Router->Router: send the success response to the user 
+            note over Router
+                      **Success Response**
+                      {
+                          "status_code": 200,
+                          "status": "success",
+                          "message": "Chatbot response generated",
+                          data: 
+                            {output: 
+                            "'''Python
+                            num1 = input("Enter first number: ")
+                            num2 = input("Enter second number: ")
+                            sum_result = float(num1) + float(num2)
+                            print(f"The sum of {num1} and {num2} is {sum_result}")  
+                            ''' "
+                            timestamp: "2026-03-24T15:20:00Z"}
+
+                          "request_id": "a8ec6e68-53dc-4ae5-a2cc-d94e73bad048",
+                      }
+        end note
+        end 
+        group except Block
+            activate Utils
+                Router->Utils:call the log error function and pass the file name,function name and exception
+            deactivate Utils
+                Router -> Router: send the  error to the user generated using error_response function
+                note over Router
+                            **Error Response**
+                                {
+                                        status_code: 500
+                                        status: "Error"
+                                        message: "Internal Server Error"
+                                        error: 
+                                            {error: "Unhandled exception in Review Agent",
+                                            timestamp: "2026-03-24T15:22:00Z"}
+                                        request_id: "3be0f4ba-8e55-4175-a6ca-8069d120fb92"
+                                        }
+                end note                    
+        end 
+
+    end
+        Router->User: send the response to the user 
+ 
+    deactivate Router
+deactivate Main         
+@enduml

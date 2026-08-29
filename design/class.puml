@@ -1,0 +1,185 @@
+@startuml agentic_code_pipeline_class_diagram
+skinparam classAttributeIconSize 0
+skinparam classFontSize 10
+skinparam packageStyle rectangle
+skinparam ArrowColor #888888
+skinparam ClassBorderColor #2f4f4f
+skinparam ClassBackgroundColor #f8fbff
+skinparam PackageBorderColor #2f4f4f
+skinparam PackageBackgroundColor #ffffff
+
+package "Main" {
+    class Main <<main.py>> {
+        +run_local_server()
+        +initialize_config()
+        +create_app()
+        +serve()
+    }
+}
+
+package "Route Layer" {
+    class CodePipelineRouter<<routes.py>> {
+        +code_pipeline(payload: PipelineRequest) 
+    }
+}
+
+package "Service Layer"{
+    class CodePipelineService <<service.py>>{
+        +code_pipeline(user_query:str,thread_id:str)
+        +_build_graph(checkpointer)
+        +_decide_node(state:AgentState)
+        +_research_node(state:AgentState)
+        +_code_node(state:AgentState)
+        +_review_node(state:AgentState)
+        +_decide_route(state:AgentState)
+        +_review_route(state:AgentState)
+    }
+}
+
+package "AgentLayer"{
+    class CoderAgent<<code_agent.py>>{
+        +ask(question:str,context,review_comments)
+        +_run_agent(question:str,context,review_comments)
+    }
+    class ReviewerAgent<<review_agent.py>>{
+        +ask(code:str,):str
+        +_run_agent(code:str,file_path,tools)
+    }
+    class ResearcherAgent<<researcher_agent.py>>{
+        +ask(question:str,review_comments):str
+        +_run_agent(question:str,review_comments,tools)    
+    }
+    
+    class SystemPrompt<<system_prompt.py>>{
+        +code_agent_prompt:str
+        +review_agent_prompt:str
+        +researcher_agent_prompt:str
+    }
+}
+
+
+package "Repository"{
+    class ErrorLog<<repository.py>>{
+        +_get_session()
+        +store_error(file_name:str,function_name:str,error:str)
+    }
+}
+
+package "Utils"{
+    class Helper<<helper.py>>{
+
+        +log_error(file_name,function_name,exception)
+        +success_response(code,message,data,request_id)
+        +error_response(code,message,error,request_id)
+        +get_llm(max_token,temperature)
+        +_get_bedrock_client()
+    }
+    class Error_code<<error_codes.py>>{
+        +to_dict()
+        +database_error(operation:str)
+    }
+}
+
+package "Models" {
+
+   class APIResponse <<models.py>> {
+        +code: int
+        +status: string
+        +message: string
+        +data:object
+        +error: Error
+        +request_id: string
+    }
+    class Error <<models.py>>{
+        +error:str
+        +timestamp:datetime
+    }
+    class PipelineResponse<<models.py>>{
+        +code: int
+        +status: string
+        +message: string
+        +data:PipelineResponseData
+        +error: Error
+        +request_id: string
+        +timestamp: datetime
+    }
+
+    class PipelineResponseData<<models.py>>{
+        +output_code: str
+        +timestamp: datetime
+    }
+
+    class PipelineRequest <<models.py>> {
+        user_query:str
+        user_id:str
+    }
+
+    class AgentState<<models.py>>{
+        user_query:str
+        code:str
+        context:str
+        review:str
+        status:str
+        route:str
+        retries:int
+        thread_id:str
+    }
+
+}
+
+package "Migration"{
+    class Migration<<migration.py>>{
+        +create_tables()
+    }
+}
+
+package "Schema"{
+        class ErrorLogs<<schema.py>>{
+        +error_id:int
+        +id:string
+        +file_name:str
+        +function_name:str
+        +error:string
+        +created_at:datetime
+        +created_by:string
+        +updated_at:datetime
+        +updated_by:string
+        +is_active:boolean
+    }
+}
+
+package "DataBase"{
+    class DataBase<<database_connection.py>>{
+        +_inititialze()
+        +get_session()
+        +inspector()
+        +test_connection()
+    }
+}
+
+package "Settings"{
+    class Settings <<settings.py>>{
+        +get_settings()
+    }
+}
+
+
+Main -->CodePipelineRouter
+Main -->DataBase
+Main -->Settings
+Main -->Migration
+CodePipelineRouter --> CodePipelineService
+CodePipelineRouter --> Utils
+CodePipelineService -->Utils
+CodePipelineService -->CoderAgent
+CodePipelineService -->ReviewerAgent
+CodePipelineService -->ResearcherAgent
+CoderAgent-->SystemPrompt
+ReviewerAgent-->SystemPrompt
+ResearcherAgent-->SystemPrompt
+Utils-->Models
+Utils-->Repository
+Repository-->Schema
+APIResponse-->Error
+PipelineResponse-->PipelineResponseData
+AgentLayer-->Utils

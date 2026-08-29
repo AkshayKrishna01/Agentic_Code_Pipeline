@@ -1,0 +1,16 @@
+[project]
+name = "pylint_mcp"
+version = "0.1.0"
+description = "A Model Context Protocol (MCP) server that provides Pylint code analysis capabilities through MCP tools."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "aiohttp>=3.9.0",
+    "fastapi[standard]>=0.110.0",
+    "fastmcp>=2.10.6",
+    "httpx>=0.27.0",
+    "mcp[cli]>=1.6.0,<2",
+    "pylint>=3.3.7",
+    "python-dotenv",
+    "typing-extensions>=4.13.2",
+]
