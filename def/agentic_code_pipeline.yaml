@@ -1,0 +1,258 @@
+openapi: 3.0.3
+info:
+  title: Multi-Agent Code Pipeline API
+  version: 1.0.0
+  description: |
+    API for an agentic workflow that automates code generation, review,
+    research, and routing decisions using multiple AI agents.
+
+servers:
+  - url: http://localhost:8000/api/v1/agentic
+    description: Localhost server
+
+tags:
+  - name: multi-agent pipeline
+    description: |
+      API for orchestrating code generation, review, and contextual research
+      through a LangGraph-based agent workflow.
+
+paths:
+  /pipeline/code:
+    post:
+      summary: Generate, review, or route a code-related query using the multi-agent pipeline
+      tags: [multi-agent pipeline]
+      description: |
+        Accepts a user development request and routes it through the pipeline.
+        The app classifies the query as one of greet, code, research, review, or invalid.
+        It may generate code, collect research context, run review validation,
+        and retry research up to the configured retry limit.
+
+        Runtime flow:
+        - greet: returns a greeting and exits
+        - code: generates code and reviews it
+        - research: gathers background context before code generation
+        - review: evaluates user-provided code
+        - invalid: stops with an invalid classification response
+        - retry loop: if review fails and retry count is below RETRIES_LIMIT, the workflow returns to research
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PipelineRequest'
+            examples:
+              code_request:
+                summary: Standard request for code generation
+                value:
+                  user_query: "Write a Python function that adds two numbers entered by the user"
+                  user_id: "1"
+              greeting:
+                summary: Greeting request
+                value:
+                  user_query: "Hi there"
+                  user_id: "user-42"
+              review_request:
+                summary: Review request with code input
+                value:
+                  user_query: "Review this Python function: def add(a, b): return a + b"
+                  user_id: "user-42"
+      responses:
+        '200':
+          description: Pipeline completed successfully. The output can be generated code, greeting text, or an invalid-classification message returned by the orchestrator.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PipelineResponse'
+              examples:
+                code_success:
+                  summary: Generated code returned successfully
+                  value:
+                    status_code: 200
+                    status: success
+                    message: Chatbot response generated
+                    data:
+                      output: |
+                        def add_numbers() -> None:
+                            first = float(input("Enter first number: "))
+                            second = float(input("Enter second number: "))
+                            print(first + second)
+                      timestamp: '2026-03-24T15:20:00Z'
+                    request_id: e1d9f2a7-42bd-4b93-b5f4-96c4b1f7c2aa
+                greeting_success:
+                  summary: Greeting returned by the orchestrator
+                  value:
+                    status_code: 200
+                    status: success
+                    message: Chatbot response generated
+                    data:
+                      output: Hello there! How can I assist you with code development?
+                      timestamp: '2026-03-24T15:20:00Z'
+                    request_id: 68c0c6cf-7b0c-4aa6-9df1-b2fd9eba301b
+                invalid_success:
+                  summary: Request deemed invalid by the orchestrator
+                  value:
+                    status_code: 200
+                    status: success
+                    message: Chatbot response generated
+                    data:
+                      output: 'invalid: asked for code review but no code was provided and I am Code development assistance ask relevant to that'
+                      timestamp: '2026-03-24T15:20:00Z'
+                    request_id: d5491d6d-377e-4f09-b9b9-8f6c968dc669
+        '400':
+          description: Application-level processing error returned by the service layer, such as a domain or database-related failure.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+              example:
+                status_code: 400
+                status: error
+                message: Failure beacuse of: database read
+                data: null
+                error:
+                  error: Failure beacuse of: database read
+                  timestamp: '2026-08-22T10:10:00Z'
+                request_id: f7d1d7df-e689-46f2-9f70-65237d4d07f5
+        '422':
+          description: Validation failed before service execution. FastAPI/Pydantic rejects invalid request payloads such as missing or empty user_query/user_id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+              example:
+                detail:
+                  - type: missing
+                    loc: [body, user_query]
+                    msg: Field required
+                    input:
+                      user_id: '1'
+                  - type: string_too_short
+                    loc: [body, user_id]
+                    msg: Value should have at least 1 character after trimming
+                    input:
+                      user_query: '   '
+                      user_id: '   '
+        '500':
+          description: Unhandled exception in the route or pipeline orchestration.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+              example:
+                status_code: 500
+                status: error
+                message: Pipeline failed
+                data: null
+                error:
+                  error: 'LLM or database connection failure during orchestration'
+                  timestamp: '2026-08-22T10:12:05Z'
+                request_id: 9cfae01d-6f90-41db-9a18-81c3fdf02bbb
+
+components:
+  schemas:
+    PipelineRequest:
+      type: object
+      required:
+        - user_query
+        - user_id
+      properties:
+        user_query:
+          type: string
+          minLength: 1
+          description: >
+            User instruction, code request, review prompt, or greeting text.
+            The value is trimmed and must not be empty after validation.
+          example: "Write a Python function that adds two numbers entered by the user"
+        user_id:
+          type: string
+          minLength: 1
+          description: >
+            Unique identifier for the caller or conversation thread.
+            The value is trimmed and must not be empty after validation.
+          example: "1"
+
+    PipelineResponseData:
+      type: object
+      description: Response payload returned by the pipeline after routing and agent processing.
+      properties:
+        output:
+          type: string
+          description: Final text produced by the agent pipeline; this may be generated code, greeting text, or the invalid response string.
+          example: |
+            def add_numbers() -> None:
+                first = float(input("Enter first number: "))
+                second = float(input("Enter second number: "))
+                print(first + second)
+        timestamp:
+          type: string
+          format: date-time
+          example: '2026-03-24T15:20:00Z'
+
+    ErrorDetail:
+      type: object
+      description: Standard error payload attached to unsuccessful API responses.
+      properties:
+        error:
+          type: string
+          example: 'Failure beacuse of: database read'
+        timestamp:
+          type: string
+          format: date-time
+          example: '2026-08-22T10:10:00Z'
+
+    APIResponse:
+      type: object
+      description: Standard response envelope for successful and unsuccessful responses.
+      properties:
+        status_code:
+          type: integer
+          example: 200
+        status:
+          type: string
+          enum: [success, error]
+          example: success
+        message:
+          type: string
+          example: Chatbot response generated
+        data:
+          oneOf:
+            - $ref: '#/components/schemas/PipelineResponseData'
+            - type: 'null'
+          nullable: true
+          description: Returned output payload; null for errors.
+        error:
+          oneOf:
+            - $ref: '#/components/schemas/ErrorDetail'
+            - type: 'null'
+          nullable: true
+          description: Error details for unsuccessful requests.
+        request_id:
+          type: string
+          example: e1d9f2a7-42bd-4b93-b5f4-96c4b1f7c2aa
+
+    PipelineResponse:
+      allOf:
+        - $ref: '#/components/schemas/APIResponse'
+      description: Structured pipeline response returned by /api/v1/agentic/pipeline/code.
+
+    ValidationErrorResponse:
+      type: object
+      description: Default FastAPI validation error object emitted by Pydantic when required fields are missing or blank.
+      properties:
+        detail:
+          type: array
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+              loc:
+                type: array
+                items:
+                  type: string
+              msg:
+                type: string
+              input:
+                type: object
+                additionalProperties: true
+
