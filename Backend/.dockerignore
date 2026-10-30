@@ -1,0 +1,11 @@
+.git
+.venv
+__pycache__
+*.py[cod]
+.env
+.env.*
+!.env.example
+src/.env
+src/.env.*
+!src/.env.example
+review_temp.py

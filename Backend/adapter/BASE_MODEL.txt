@@ -1,0 +1,2 @@
+Qwen/Qwen2.5-Coder-0.5B-Instruct
+LoRA adapter; Stage 2 refinement

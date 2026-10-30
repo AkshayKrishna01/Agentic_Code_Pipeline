@@ -1,0 +1,191 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent-soft: var(--accent-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-warning: var(--warning);
+
+  --radius-card: 0.625rem;
+}
+
+:root {
+  /* Light theme */
+  --background: oklch(0.985 0.001 250);
+  --foreground: oklch(0.19 0.008 255);
+  --surface: oklch(1 0 0);
+  --surface-raised: oklch(0.968 0.002 250);
+  --border: oklch(0.905 0.004 250);
+  --border-strong: oklch(0.84 0.006 250);
+  --muted: oklch(0.505 0.011 255);
+  --accent: oklch(0.575 0.152 250);
+  --accent-foreground: oklch(0.99 0 0);
+  --accent-soft: oklch(0.575 0.152 250 / 0.12);
+  --danger: oklch(0.55 0.19 22);
+  --danger-soft: oklch(0.55 0.19 22 / 0.12);
+  --warning: oklch(0.62 0.14 75);
+}
+
+.dark {
+  /* Dark-first developer tooling palette */
+  --background: oklch(0.155 0.004 260);
+  --foreground: oklch(0.955 0.002 250);
+  --surface: oklch(0.196 0.005 260);
+  --surface-raised: oklch(0.235 0.006 260);
+  --border: oklch(0.288 0.007 260);
+  --border-strong: oklch(0.36 0.009 260);
+  --muted: oklch(0.665 0.011 258);
+  --accent: oklch(0.7 0.13 245);
+  --accent-foreground: oklch(0.16 0.01 260);
+  --accent-soft: oklch(0.7 0.13 245 / 0.15);
+  --danger: oklch(0.68 0.17 22);
+  --danger-soft: oklch(0.68 0.17 22 / 0.15);
+  --warning: oklch(0.78 0.13 80);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  html {
+    color-scheme: light;
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 9px;
+    height: 9px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: var(--border-strong);
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+}
+
+/* Python token colors for the code viewer */
+.tok-kw {
+  color: oklch(0.74 0.13 305);
+}
+.tok-str {
+  color: oklch(0.78 0.12 145);
+}
+.tok-num {
+  color: oklch(0.8 0.1 70);
+}
+.tok-com {
+  color: var(--muted);
+  font-style: italic;
+}
+.tok-fn {
+  color: oklch(0.78 0.11 240);
+}
+.tok-cls {
+  color: oklch(0.83 0.11 90);
+}
+.tok-dec {
+  color: oklch(0.78 0.1 60);
+}
+.tok-bi {
+  color: oklch(0.76 0.1 200);
+}
+.tok-op {
+  color: oklch(0.72 0.02 260);
+}
+
+:root:not(.dark) .tok-kw {
+  color: oklch(0.48 0.18 305);
+}
+:root:not(.dark) .tok-str {
+  color: oklch(0.44 0.13 148);
+}
+:root:not(.dark) .tok-num {
+  color: oklch(0.5 0.13 60);
+}
+:root:not(.dark) .tok-fn {
+  color: oklch(0.48 0.16 255);
+}
+:root:not(.dark) .tok-cls {
+  color: oklch(0.5 0.13 75);
+}
+:root:not(.dark) .tok-dec {
+  color: oklch(0.52 0.13 45);
+}
+:root:not(.dark) .tok-bi {
+  color: oklch(0.46 0.11 210);
+}
+:root:not(.dark) .tok-op {
+  color: oklch(0.42 0.02 260);
+}
+
+@keyframes pulse-flow {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.animate-flow {
+  animation: pulse-flow 1.6s ease-in-out infinite;
+}
+
+@keyframes fade-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.animate-fade-rise {
+  animation: fade-rise 0.28s ease-out both;
+}

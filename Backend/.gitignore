@@ -8,3 +8,10 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Local credentials and deployment env files
+.env
+.env.*
+!.env.example
+*.env
+!deployment.env.example
