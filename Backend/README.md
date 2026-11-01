@@ -1,10 +1,10 @@
 # Multi-Agent Code Pipeline API
 
-FastAPI service for code generation, research, and review. It uses a locally loaded fine-tuned Qwen/LoRA model for Python code generation, Groq for routing/research/review model calls, PostgreSQL for application error logs and LangGraph checkpoints, and MCP services for web research and pylint.
+FastAPI service for code generation, research, and review. Code generation can use either a locally loaded fine-tuned Qwen/LoRA model or Groq, while PostgreSQL stores application error logs and LangGraph checkpoints and MCP services provide web research and pylint.
 
 ## Technical overview
 
-This project exposes an HTTP API around an asynchronous, graph-based Python code assistant. A request is classified by an LLM, then handled by LangGraph nodes that can research a topic, generate code, and review that code. The graph can return to research and code generation when review fails, up to a configured retry limit.
+This project exposes an HTTP API around an asynchronous, graph-based Python code assistant. A request is classified by an LLM, then handled by LangGraph nodes that can research a topic, generate code, and review that code. The graph can return to research and code generation when review fails, up to a configured retry limit. Set `CODE_GENERATION_PROVIDER=local` to load Qwen and the adapter, or `CODE_GENERATION_PROVIDER=groq` to generate code through Groq without loading local model files.
 
 The service is an orchestration layer, not a code execution environment: generated code is returned to the caller and is not run by the API. Review delegates static analysis to an external pylint MCP server. Research tools are provided by an external DuckDuckGo MCP server. Routing, research, and review model calls use LangChain's Groq integration; code generation uses a local Transformers/PEFT model loaded at startup.
 
@@ -160,7 +160,8 @@ Required settings:
 | `DB_NAME` | Application database |
 | `DB_NAME_CHECKPOINT` | LangGraph checkpoint database |
 | `GROQ_API_KEY` | Groq credentials |
-| `LOCAL_MODEL_BASE` | Hugging Face base model (default `Qwen/Qwen2.5-Coder-0.5B-Instruct`) |
+| `CODE_GENERATION_PROVIDER` | `local` for Qwen/LoRA or `groq` for Groq code generation; defaults to `local` |
+| `LOCAL_MODEL_BASE` | Hugging Face base model when using local generation (default `Qwen/Qwen2.5-Coder-0.5B-Instruct`) |
 | `LOCAL_MODEL_ADAPTER` | Stage 2 adapter directory (default repository `adapter/`) |
 | `LOCAL_MODEL_MAX_NEW_TOKENS` | Maximum generated tokens (default `768`) |
 | `LOCAL_MODEL_DEVICE` | `cpu` by default; `auto` selects CUDA when available, otherwise CPU |
@@ -169,14 +170,14 @@ Required settings:
 | `PYLINT_MCP_SERVER_URL` | Pylint MCP streamable HTTP URL |
 | `API_AUTH_TOKEN` | Bearer token; use a random secret of at least 32 characters |
 
-Optional settings include `DB_PORT` (default `5432`), `HOST` (default `0.0.0.0`), `PORT` (default `8080`), `LOG_LEVEL` (default `INFO`), `GROQ_MODEL` (default `openai/gpt-oss-120b`), `CORS_ORIGINS` (comma-separated browser origins; empty disables CORS), and `PYLINT_WORKSPACE` (default `/tmp/code-pipeline-review`). The checked-in Stage 2 adapter is under `adapter/`; configure `LOCAL_MODEL_ADAPTER` if you move it. `PROVIDER` does not currently select another integration. Generate a token with a cryptographically secure random generator, for example `python -c "import secrets; print(secrets.token_urlsafe(48))"`.
+Optional settings include `DB_PORT` (default `5432`), `HOST` (default `0.0.0.0`), `PORT` (default `8080`), `LOG_LEVEL` (default `INFO`), `GROQ_MODEL` (default `openai/gpt-oss-120b`), `CORS_ORIGINS` (comma-separated browser origins; empty disables CORS), and `PYLINT_WORKSPACE` (default `/tmp/code-pipeline-review`). Set `CODE_GENERATION_PROVIDER=groq` for deployment without Qwen, or `local` to use the checked-in Stage 2 adapter under `adapter/`. Configure `LOCAL_MODEL_ADAPTER` if you move it. `PROVIDER` does not currently select another integration. Generate a token with a cryptographically secure random generator, for example `python -c "import secrets; print(secrets.token_urlsafe(48))"`.
 
 Settings are read from environment variables; for local use, `src/settings/settings.py` also loads `src/.env`. Startup validates required credentials and URLs, token length, port ranges, and log level. It does not test the reachability of Groq or either MCP endpoint at startup.
 
 ## Run locally
 
 ```sh
-uv sync --no-install-project
+uv sync --no-install-project --extra local-model  # use without this extra for Groq-only mode
 uv run uvicorn src.main:app --host 0.0.0.0 --port 8080
 ```
 
@@ -199,6 +200,8 @@ Build from the repository root:
 docker build -t multiagent-code-pipeline .
 ```
 
+The default image installs the lightweight Groq-only dependency set. To build an image that supports local Qwen generation, use `--build-arg INSTALL_LOCAL_MODEL=true` and set `CODE_GENERATION_PROVIDER=local` at runtime.
+
 Run with the required settings supplied through your deployment platform's secret/environment configuration:
 
 ```sh
@@ -214,7 +217,7 @@ Install Python (3.14 as declared by this project) and [uv](https://docs.astral.s
 ```powershell
 Copy-Item src/.env.example src/.env
 # Edit src/.env and set database, Groq, MCP, and API token values.
-uv sync --no-install-project
+uv sync --no-install-project --extra local-model
 uv run uvicorn src.main:app --host 127.0.0.1 --port 8080
 ```
 
@@ -222,7 +225,7 @@ On Windows, Psycopg's asynchronous checkpoint operations run on a compatible sel
 
 On first startup, Transformers downloads the base model from Hugging Face into its normal cache; the checked-in LoRA adapter is loaded from `adapter/`. CPU inference is supported and selected by default, though it can be slow. The adapter is not modified or merged. Startup reports missing adapter files and model download/load errors and stops without using an external code-generation model. Generation reports timeouts, inference failures, and syntactically invalid Python as pipeline errors. For offline startup, pre-cache the base model before launching.
 
-Run mocked tests with `uv sync --extra test --no-install-project` followed by `uv run pytest`.
+Run mocked tests with `uv sync --extra test --extra local-model --no-install-project` followed by `uv run pytest`.
 
 ## Deployment notes
 
@@ -237,7 +240,7 @@ Run mocked tests with `uv sync --extra test --no-install-project` followed by `u
 ## Runtime dependencies and operational considerations
 
 - **Groq** serves routing and research/review agents. `GROQ_MODEL` selects this model; `PROVIDER` does not currently select another integration.
-- **Local Qwen/PEFT** serves code generation. `LOCAL_MODEL_BASE`, `LOCAL_MODEL_ADAPTER`, `LOCAL_MODEL_MAX_NEW_TOKENS`, `LOCAL_MODEL_DEVICE`, and `LOCAL_MODEL_TIMEOUT` configure it. The shared model is loaded once at application startup.
+- **Code generation** is selected with `CODE_GENERATION_PROVIDER`. `local` uses Qwen/PEFT and loads the shared model once at startup; `groq` uses the configured Groq model and does not initialize Qwen or require the adapter at runtime. The local mode settings are `LOCAL_MODEL_BASE`, `LOCAL_MODEL_ADAPTER`, `LOCAL_MODEL_MAX_NEW_TOKENS`, `LOCAL_MODEL_DEVICE`, and `LOCAL_MODEL_TIMEOUT`.
 - **DuckDuckGo MCP** provides tools only to the research agent. The service uses the MCP streamable HTTP transport and loads the server's tools for a request.
 - **Pylint MCP** provides tools to the review agent. The API writes a temporary file before connecting and deletes it in a `finally` block after the review attempt. Ensure the workspace is private, writable by the API, and mounted readably by the MCP service.
 - **PostgreSQL** has two logical roles: `DB_NAME` for SQLAlchemy application data and `DB_NAME_CHECKPOINT` for LangGraph checkpoint state. Both are assembled from the same host, port, username, and password.
@@ -246,7 +249,7 @@ Run mocked tests with `uv sync --extra test --no-install-project` followed by `u
 
 ## Development notes
 
-- Dependencies are declared in `pyproject.toml`; use `uv sync --no-install-project` to resolve and install the local Qwen/PEFT runtime dependencies.
+- Dependencies are declared in `pyproject.toml`; the Qwen/PEFT runtime is optional and is installed with `uv sync --extra local-model --no-install-project`.
 - `src.main:app` is the ASGI entry point used for local and Docker execution.
-- The `tests/` suite mocks model weights and external service calls; run it with `uv sync --extra test --no-install-project` and `uv run pytest`.
+- The `tests/` suite mocks model weights and external service calls; run it with `uv sync --extra test --extra local-model --no-install-project` and `uv run pytest`.
 - End-to-end verification requires the configured databases, Groq API, DuckDuckGo MCP, and pylint MCP services.

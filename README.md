@@ -44,7 +44,7 @@ Greetings return a fixed response without invoking code generation. Review reque
 | Web client | React 19, Vite, Tailwind CSS 4 | Developer workspace, request composer, pipeline/result views, and browser-local preferences/history. |
 | HTTP API | FastAPI, Pydantic | Validates requests, checks bearer authentication, returns results and health checks. |
 | Workflow | LangGraph | Routes requests between decision, research, code, and review nodes and manages review retries. |
-| Code generation | Hugging Face Transformers, PEFT, Qwen2.5-Coder-0.5B-Instruct | Runs locally with the checked-in LoRA adapter. |
+| Code generation | Configurable local Qwen/LoRA or Groq | Select with `CODE_GENERATION_PROVIDER`; local mode uses the checked-in adapter. |
 | Routing, research, review reasoning | LangChain, Groq | Performs request classification and agent reasoning using the configured Groq model. |
 | Research tools | DuckDuckGo MCP endpoint | Supplies web-search tools to the research agent. This is configured as an external service. |
 | Static analysis | Pylint MCP service | Exposes Python analysis tools to the review agent. An implementation is included in this repository. |
@@ -96,7 +96,7 @@ The frontend, API, and Pylint MCP server are separate applications with their ow
 
 ## Requirements
 
-- Python **3.14** (as declared in `code/pyproject.toml`) and [uv](https://docs.astral.sh/uv/), or Docker for the API container.
+- Python **3.14** (as declared in `Backend/pyproject.toml`) and [uv](https://docs.astral.sh/uv/), or Docker for the API container.
 - Node.js and [pnpm](https://pnpm.io/) for the frontend (the repository includes `frontend/pnpm-lock.yaml`).
 - PostgreSQL with two databases: an application database and a LangGraph checkpoint database.
 - A Groq API key.
@@ -124,7 +124,8 @@ Edit `code/src/.env` with real values. Do not commit credentials or production `
 | `API_AUTH_TOKEN` | Shared bearer credential; use a random secret with at least 32 characters. |
 | `GROQ_API_KEY` | Groq API credential. |
 | `GROQ_MODEL` | Model for routing, research, and review reasoning (default: `openai/gpt-oss-120b`). |
-| `LOCAL_MODEL_BASE` | Hugging Face base model (default: `Qwen/Qwen2.5-Coder-0.5B-Instruct`). |
+| `CODE_GENERATION_PROVIDER` | `local` for Qwen/LoRA or `groq` to use Groq for code generation. Defaults to `local`. |
+| `LOCAL_MODEL_BASE` | Hugging Face base model used when `CODE_GENERATION_PROVIDER=local` (default: `Qwen/Qwen2.5-Coder-0.5B-Instruct`). |
 | `LOCAL_MODEL_ADAPTER` | Adapter path, relative to `code/` by default (`adapter`). |
 | `LOCAL_MODEL_DEVICE` | Inference device (default: `cpu`; `auto` selects CUDA when available). |
 | `LOCAL_MODEL_MAX_NEW_TOKENS` | Generation token limit (default: `768`). |
@@ -178,7 +179,7 @@ The generated assets are written to `frontend/dist/`. `pnpm preview` can serve t
 Provision both PostgreSQL databases and start the configured MCP services first. Then, from the `code/` directory:
 
 ```sh
-uv sync --no-install-project
+uv sync --no-install-project --extra local-model
 uv run uvicorn src.main:app --host 127.0.0.1 --port 8080
 ```
 
@@ -274,7 +275,7 @@ The OpenAPI contract is also checked into [`def/agentic_code_pipeline.yaml`](def
 The API tests mock external model and service calls. From `code/`:
 
 ```sh
-uv sync --extra test --no-install-project
+uv sync --extra test --extra local-model --no-install-project
 uv run pytest
 ```
 

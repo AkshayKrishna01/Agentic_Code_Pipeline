@@ -7,9 +7,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+ARG INSTALL_LOCAL_MODEL=false
+
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 COPY pyproject.toml uv.lock README.md ./
-RUN uv sync --no-install-project --no-dev
+RUN if [ "$INSTALL_LOCAL_MODEL" = "true" ]; then \
+        uv sync --no-install-project --no-dev --extra local-model; \
+    else \
+        uv sync --no-install-project --no-dev; \
+    fi
 
 COPY --chown=10001:10001 src ./src
 COPY --chown=10001:10001 adapter ./adapter

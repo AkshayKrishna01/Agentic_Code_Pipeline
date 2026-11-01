@@ -22,6 +22,7 @@ class Settings:
     log_level: str
     model_id: str
     provider: str
+    code_generation_provider: str
     pylint_mcp_server_url: str
     db_name_checkpoint: str
     duckduckgo: str
@@ -65,6 +66,8 @@ class Settings:
             raise ValueError("LOCAL_MODEL_TIMEOUT must be positive")
         if self.local_model_device not in {"cpu", "auto"}:
             raise ValueError("LOCAL_MODEL_DEVICE must be cpu or auto")
+        if self.code_generation_provider not in {"local", "groq"}:
+            raise ValueError("CODE_GENERATION_PROVIDER must be local or groq")
 
 
 def get_setting() -> Settings:
@@ -82,6 +85,7 @@ def get_setting() -> Settings:
         log_level=os.getenv("LOG_LEVEL", "INFO"),
         model_id=os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"),
         provider=os.getenv("PROVIDER", "groq"),
+        code_generation_provider=os.getenv("CODE_GENERATION_PROVIDER", "local").lower(),
         pylint_mcp_server_url=os.getenv("PYLINT_MCP_SERVER_URL", ""),
         db_name_checkpoint=os.getenv("DB_NAME_CHECKPOINT", ""),
         duckduckgo=os.getenv("DUCK_DUCK_GO", ""),

@@ -2124,20 +2124,22 @@ dependencies = [
     { name = "langchain-mcp-adapters" },
     { name = "langgraph" },
     { name = "langgraph-checkpoint-postgres" },
-    { name = "peft" },
     { name = "psycopg", extra = ["binary", "pool"] },
     { name = "psycopg2" },
     { name = "psycopg2-binary" },
     { name = "pydantic", extra = ["email"] },
     { name = "pylint" },
-    { name = "safetensors" },
     { name = "sqlalchemy" },
-    { name = "torch" },
-    { name = "transformers" },
     { name = "uvicorn" },
 ]
 
 [package.optional-dependencies]
+local-model = [
+    { name = "peft" },
+    { name = "safetensors" },
+    { name = "torch" },
+    { name = "transformers" },
+]
 test = [
     { name = "httpx" },
     { name = "pytest" },
@@ -2155,7 +2157,7 @@ requires-dist = [
     { name = "langchain-mcp-adapters", specifier = ">=0.2.1" },
     { name = "langgraph", specifier = ">=1.1.1" },
     { name = "langgraph-checkpoint-postgres", specifier = ">=3.0.4" },
-    { name = "peft", specifier = ">=0.17.0" },
+    { name = "peft", marker = "extra == 'local-model'", specifier = ">=0.17.0" },
     { name = "psycopg", extras = ["binary", "pool"], specifier = ">=3.3.3" },
     { name = "psycopg2", specifier = ">=2.9.11" },
     { name = "psycopg2-binary", specifier = ">=2.9.11" },
@@ -2163,13 +2165,13 @@ requires-dist = [
     { name = "pylint", specifier = ">=4.0.5" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.0" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.24" },
-    { name = "safetensors", specifier = ">=0.5.0" },
+    { name = "safetensors", marker = "extra == 'local-model'", specifier = ">=0.5.0" },
     { name = "sqlalchemy", specifier = ">=2.0.46" },
-    { name = "torch", specifier = ">=2.6.0" },
-    { name = "transformers", specifier = ">=4.51.0" },
+    { name = "torch", marker = "extra == 'local-model'", specifier = ">=2.6.0" },
+    { name = "transformers", marker = "extra == 'local-model'", specifier = ">=4.51.0" },
     { name = "uvicorn", specifier = ">=0.41.0" },
 ]
-provides-extras = ["test"]
+provides-extras = ["test", "local-model"]
 
 [[package]]
 name = "sse-starlette"

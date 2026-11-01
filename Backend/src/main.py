@@ -20,7 +20,8 @@ logger = logging.getLogger(__name__)
 async def lifespan(_: FastAPI):
     """Fail startup when configuration, the database, or schema is not ready."""
     settings.validate()
-    initialize_local_code_model(settings)
+    if settings.code_generation_provider == "local":
+        initialize_local_code_model(settings)
     database = Database()
     with database.engine.connect() as connection:
         connection.execute(text("SELECT 1"))
