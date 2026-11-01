@@ -31,7 +31,7 @@ The API accepts a natural-language request and routes it through a graph of spec
 
 1. **Classify** the request as a greeting, code request, research request, or code review request.
 2. **Research**, when requested, by calling tools exposed by a DuckDuckGo MCP server.
-3. **Generate Python code** with a locally loaded Qwen 2.5 Coder model and the repository's LoRA adapter.
+3. **Generate Python code** with either the locally loaded Qwen 2.5 Coder model and LoRA adapter, or Groq when local generation is disabled.
 4. **Review** code using the Pylint MCP service and an LLM-based review agent.
 5. **Retry** generation when the review response indicates failure, up to the configured retry limit.
 
@@ -50,7 +50,7 @@ Greetings return a fixed response without invoking code generation. Review reque
 | Static analysis | Pylint MCP service | Exposes Python analysis tools to the review agent. An implementation is included in this repository. |
 | Persistence | PostgreSQL, SQLAlchemy, LangGraph checkpointing | Stores application error logs and graph checkpoints in separate databases. |
 
-The configured Groq model defaults to `openai/gpt-oss-120b`; the code-generation model defaults to `Qwen/Qwen2.5-Coder-0.5B-Instruct`. These serve different roles: Groq handles routing/reasoning while the local Qwen model generates Python code.
+The configured Groq model defaults to `openai/gpt-oss-120b`. With `CODE_GENERATION_PROVIDER=local`, Qwen generates Python code locally; with `CODE_GENERATION_PROVIDER=groq`, the same Groq model also handles code generation.
 
 ```mermaid
 flowchart LR
@@ -58,7 +58,7 @@ flowchart LR
     W -->|POST /pipeline/code| A[FastAPI API]
     A --> G[LangGraph workflow]
     G -->|research| R[DuckDuckGo MCP]
-    G --> C[Local Qwen code generation]
+    G --> C[Configurable Qwen or Groq code generation]
     C --> V[Pylint MCP review]
     V -->|retry when review fails| G
     G --> A
@@ -72,14 +72,14 @@ flowchart LR
 ├── README.md
 ├── def/
 │   └── agentic_code_pipeline.yaml    OpenAPI 3.0.3 description
-├── frontend/
+├── Frontend/
 │   ├── src/                          React workspace, views, and API client
 │   ├── package.json                  Vite scripts and frontend dependencies
 │   └── CODEPILOT_AI_OVERVIEW.md       Frontend behavior and component overview
 ├── design/
 │   ├── class.puml                    PlantUML class diagram
 │   └── clientSequence.puml           PlantUML sequence diagram
-├── code/
+├── Backend/
 │   ├── src/                          FastAPI application and agents
 │   ├── adapter/                      Local Qwen LoRA adapter and tokenizer files
 │   ├── tests/                        Pipeline and local-model tests
@@ -92,29 +92,29 @@ flowchart LR
     └── pylint_mcp/                   Pylint MCP server implementation
 ```
 
-The frontend, API, and Pylint MCP server are separate applications with their own setup. The API package and Python project configuration are under `code/`; run its commands from that directory. The Pylint MCP service is under `pylint/pylint_mcp/`.
+The frontend, API, and Pylint MCP server are separate applications with their own setup. The API package and Python project configuration are under `Backend/`; run its commands from that directory. The Pylint MCP service is under `pylint/pylint_mcp/`.
 
 ## Requirements
 
 - Python **3.14** (as declared in `Backend/pyproject.toml`) and [uv](https://docs.astral.sh/uv/), or Docker for the API container.
-- Node.js and [pnpm](https://pnpm.io/) for the frontend (the repository includes `frontend/pnpm-lock.yaml`).
+- Node.js and [pnpm](https://pnpm.io/) for the frontend (the repository includes `Frontend/pnpm-lock.yaml`).
 - PostgreSQL with two databases: an application database and a LangGraph checkpoint database.
 - A Groq API key.
 - Reachable DuckDuckGo and Pylint MCP endpoints using streamable HTTP.
 - A bearer token of at least 32 characters.
-- Network access to Hugging Face on first startup if the base Qwen model is not already cached. The base model is downloaded to the normal Transformers cache; the LoRA adapter is included under `code/adapter/`.
+- Network access to Hugging Face on first startup only when `CODE_GENERATION_PROVIDER=local` and the base Qwen model is not already cached. The base model is downloaded to the normal Transformers cache; the LoRA adapter is included under `Backend/adapter/`.
 
-The local model can run on CPU, though generation may be slow. CUDA may be selected with `LOCAL_MODEL_DEVICE=auto` when available.
+The local model can run on CPU, though generation may be slow. CUDA may be selected with `LOCAL_MODEL_DEVICE=auto` when available. Groq-only deployments do not need the local model or its optional dependencies.
 
 ## Configure the API
 
 From the repository root, create a local environment file from the example:
 
 ```powershell
-Copy-Item code/src/.env.example code/src/.env
+Copy-Item Backend/src/.env.example Backend/src/.env
 ```
 
-Edit `code/src/.env` with real values. Do not commit credentials or production `.env` files. The application loads this file for local development and also accepts environment variables in deployment.
+Edit `Backend/src/.env` with real values. Do not commit credentials or production `.env` files. The application loads this file for local development and also accepts environment variables in deployment.
 
 | Variable | Purpose |
 | --- | --- |
@@ -126,7 +126,7 @@ Edit `code/src/.env` with real values. Do not commit credentials or production `
 | `GROQ_MODEL` | Model for routing, research, and review reasoning (default: `openai/gpt-oss-120b`). |
 | `CODE_GENERATION_PROVIDER` | `local` for Qwen/LoRA or `groq` to use Groq for code generation. Defaults to `local`. |
 | `LOCAL_MODEL_BASE` | Hugging Face base model used when `CODE_GENERATION_PROVIDER=local` (default: `Qwen/Qwen2.5-Coder-0.5B-Instruct`). |
-| `LOCAL_MODEL_ADAPTER` | Adapter path, relative to `code/` by default (`adapter`). |
+| `LOCAL_MODEL_ADAPTER` | Adapter path, relative to `Backend/` by default (`adapter`); used only in local mode. |
 | `LOCAL_MODEL_DEVICE` | Inference device (default: `cpu`; `auto` selects CUDA when available). |
 | `LOCAL_MODEL_MAX_NEW_TOKENS` | Generation token limit (default: `768`). |
 | `LOCAL_MODEL_TIMEOUT` | Generation timeout in seconds (default: `180`). |
@@ -143,11 +143,11 @@ Generate a suitable API token with Python:
 python -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
 
-`code/src/.env.example` contains the full set of example settings. The API validates required configuration and initializes database schemas at startup; it does not verify external model/MCP reachability until those integrations are used.
+`Backend/src/.env.example` contains the full set of example settings. The API validates required configuration and initializes database schemas at startup; it does not verify external model/MCP reachability until those integrations are used.
 
 ## Run the frontend
 
-In a separate terminal, from `frontend/`:
+In a separate terminal, from `Frontend/`:
 
 ```sh
 pnpm install --frozen-lockfile
@@ -164,7 +164,7 @@ Create a local frontend env file from the example:
 cp .env.example .env.local
 ```
 
-Then adjust `VITE_API_BASE_URL` in `frontend/.env.local` if the backend is running somewhere else. `VITE_API_AUTH_TOKEN` can stay empty when the backend is configured without a browser-injected token; otherwise set it only for local development.
+Then adjust `VITE_API_BASE_URL` in `Frontend/.env.local` if the backend is running somewhere else. `VITE_API_AUTH_TOKEN` can stay empty when the backend is configured without a browser-injected token; otherwise set it only for local development.
 
 Build a static production bundle with:
 
@@ -172,23 +172,23 @@ Build a static production bundle with:
 pnpm build
 ```
 
-The generated assets are written to `frontend/dist/`. `pnpm preview` can serve the built app locally for a production-build check.
+The generated assets are written to `Frontend/dist/`. `pnpm preview` can serve the built app locally for a production-build check.
 
 ## Run locally
 
-Provision both PostgreSQL databases and start the configured MCP services first. Then, from the `code/` directory:
+Provision both PostgreSQL databases and start the configured MCP services first. Then, from the `Backend/` directory:
 
 ```sh
 uv sync --no-install-project --extra local-model
 uv run uvicorn src.main:app --host 127.0.0.1 --port 8080
 ```
 
-On first startup, the application loads the local adapter and may download the Qwen base model. The API is available at `http://127.0.0.1:8080`. FastAPI's OpenAPI endpoints are available at `/docs` and `/openapi.json` while the service is running.
+The command above enables local Qwen generation. For a Groq-only setup, set `CODE_GENERATION_PROVIDER=groq` and run `uv sync --no-install-project` without the `local-model` extra. In Groq mode, Qwen, PyTorch, Transformers, and the adapter are not loaded or installed. The API is available at `http://127.0.0.1:8080`. FastAPI's OpenAPI endpoints are available at `/docs` and `/openapi.json` while the service is running.
 
-The Dockerfile is also in `code/`; build and run it from that directory:
+The Dockerfile is also in `Backend/`; build and run it from that directory:
 
 ```sh
-cd code
+cd Backend
 docker build -t multiagent-code-pipeline .
 docker run --rm -p 8080:8080 --env-file deployment.env multiagent-code-pipeline
 ```
@@ -257,7 +257,7 @@ Example successful response:
 | `GET /health/live` | Confirms the process can respond. Does not check dependencies. |
 | `GET /health/ready` | Checks connectivity to the application PostgreSQL database. Does not check the checkpoint DB, Groq, or MCP services. |
 
-Both health endpoints are unauthenticated. See the detailed [API/runtime README](code/README.md) for response codes, configuration details, deployment guidance, and request lifecycle behavior.
+Both health endpoints are unauthenticated. See the detailed [API/runtime README](Backend/README.md) for response codes, configuration details, deployment guidance, and request lifecycle behavior.
 
 The OpenAPI contract is also checked into [`def/agentic_code_pipeline.yaml`](def/agentic_code_pipeline.yaml).
 
@@ -272,7 +272,7 @@ The OpenAPI contract is also checked into [`def/agentic_code_pipeline.yaml`](def
 
 ## Tests
 
-The API tests mock external model and service calls. From `code/`:
+The API tests mock external model and service calls. From `Backend/`:
 
 ```sh
 uv sync --extra test --extra local-model --no-install-project
@@ -283,7 +283,7 @@ End-to-end use still requires PostgreSQL, Groq credentials, and reachable MCP se
 
 ## Known limitations
 
-- Python code generation relies on local model inference and may be slow on CPU.
+- Local Python code generation may be slow on CPU; Groq mode avoids local inference and is intended for lightweight deployments.
 - Research and static review depend on external MCP services; the DuckDuckGo service is not included in this repository.
 - The review agent's text-based pass/fail detection is less reliable than a structured review result.
 - The service returns generated code but does not run it. Static analysis is not a guarantee of correctness, security, or suitability for production.
@@ -291,7 +291,7 @@ End-to-end use still requires PostgreSQL, Groq credentials, and reachable MCP se
 
 ## Additional documentation
 
-- [Detailed API and deployment notes](code/README.md)
-- [Model and architecture notes](code/MODEL_AND_ARCHITECTURE.md)
+- [Detailed API and deployment notes](Backend/README.md)
+- [Model and architecture notes](Backend/MODEL_AND_ARCHITECTURE.md)
 - [Pylint MCP server](pylint/pylint_mcp/README.md)
 - [OpenAPI specification](def/agentic_code_pipeline.yaml)

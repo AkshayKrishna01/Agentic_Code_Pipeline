@@ -17,7 +17,7 @@ The service is an orchestration layer, not a code execution environment: generat
 | Pipeline service (`src/services/service.py`) | Builds and invokes the LangGraph state machine and connects it to PostgreSQL checkpointing. |
 | Decision node | Uses the orchestrator prompt and Groq model to classify the query as `greet`, `research`, `code`, or `review`; unrecognized output follows the `invalid` end route. |
 | Research agent (`src/agent/research_agent.py`) | Loads tools from the configured DuckDuckGo MCP endpoint and asks an LLM agent to produce research context. |
-| Code agent (`src/agent/code_agent.py`) | Uses the locally loaded Qwen base model and Stage 2 LoRA adapter with the code-generation prompt and research/review context. It has no MCP tools. |
+| Code agent (`src/agent/code_agent.py`) | Uses either the locally loaded Qwen base model and Stage 2 LoRA adapter, or Groq, with the code-generation prompt and research/review context. It has no MCP tools. |
 | Review agent (`src/agent/review_agent.py`) | Writes review input to a temporary `.py` file, loads tools from the pylint MCP endpoint, and asks an LLM agent to report pass/fail and comments. The temporary file is removed after the review call. |
 | Settings and helpers (`src/settings/`, `src/utils/`) | Load and validate environment settings, construct Groq clients, format API responses, and persist application errors. |
 | PostgreSQL persistence (`src/repository/`, `src/migration/`) | Stores application error records in `error_logs`; LangGraph's PostgreSQL checkpointer stores graph checkpoints separately. |
