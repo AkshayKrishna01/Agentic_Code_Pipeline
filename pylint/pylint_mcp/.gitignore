@@ -40,7 +40,5 @@ htmlcov/
 coverage.xml
 *.cover
 
-#uv
-uv.lock
-
+# uv lockfile is committed for reproducible container builds.
 
