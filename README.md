@@ -100,7 +100,7 @@ The frontend, API, and Pylint MCP server are separate applications with their ow
 - Node.js and [pnpm](https://pnpm.io/) for the frontend (the repository includes `Frontend/pnpm-lock.yaml`).
 - PostgreSQL with two databases: an application database and a LangGraph checkpoint database.
 - A Groq API key.
-- Reachable DuckDuckGo and Pylint MCP endpoints using streamable HTTP.
+- A reachable Pylint MCP endpoint using streamable HTTP; DuckDuckGo MCP is optional for code-only deployments.
 - A bearer token of at least 32 characters.
 - Network access to Hugging Face on first startup only when `CODE_GENERATION_PROVIDER=local` and the base Qwen model is not already cached. The base model is downloaded to the normal Transformers cache; the LoRA adapter is included under `Backend/adapter/`.
 
@@ -130,7 +130,7 @@ Edit `Backend/src/.env` with real values. Do not commit credentials or productio
 | `LOCAL_MODEL_DEVICE` | Inference device (default: `cpu`; `auto` selects CUDA when available). |
 | `LOCAL_MODEL_MAX_NEW_TOKENS` | Generation token limit (default: `768`). |
 | `LOCAL_MODEL_TIMEOUT` | Generation timeout in seconds (default: `180`). |
-| `DUCK_DUCK_GO` | DuckDuckGo MCP streamable HTTP URL. |
+| `DUCK_DUCK_GO` | Optional DuckDuckGo MCP streamable HTTP URL; research is unavailable when omitted. |
 | `PYLINT_MCP_SERVER_URL` | Pylint MCP streamable HTTP URL. |
 | `PYLINT_WORKSPACE` | Temporary review workspace accessible to the API and Pylint MCP service. |
 | `HOST`, `PORT` | API bind address and port (defaults: `0.0.0.0`, `8080`). |
@@ -185,11 +185,10 @@ uv run uvicorn src.main:app --host 127.0.0.1 --port 8080
 
 The command above enables local Qwen generation. For a Groq-only setup, set `CODE_GENERATION_PROVIDER=groq` and run `uv sync --no-install-project` without the `local-model` extra. In Groq mode, Qwen, PyTorch, Transformers, and the adapter are not loaded or installed. The API is available at `http://127.0.0.1:8080`. FastAPI's OpenAPI endpoints are available at `/docs` and `/openapi.json` while the service is running.
 
-The Dockerfile is also in `Backend/`; build and run it from that directory:
+The production Dockerfile is in `Backend/`, but build from the repository root so it can include the Pylint MCP project:
 
 ```sh
-cd Backend
-docker build -t multiagent-code-pipeline .
+docker build -f Backend/Dockerfile -t multiagent-code-pipeline .
 docker run --rm -p 8080:8080 --env-file deployment.env multiagent-code-pipeline
 ```
 
@@ -205,7 +204,9 @@ uv sync
 uv run fastapi dev src/main.py
 ```
 
-Configure the API's `PYLINT_MCP_SERVER_URL` to the service's MCP endpoint. The Pylint service must be able to read the temporary Python file created by the API. When the services run in separate containers, mount the same private workspace volume at the same path in both containers and set `PYLINT_WORKSPACE` accordingly. The DuckDuckGo MCP server is not included here and must be supplied separately if research routing is used.
+Configure the API's `PYLINT_MCP_SERVER_URL` to the service's MCP endpoint. The Pylint service must be able to read the temporary Python file created by the API. For the combined Render image, the supervisor starts Pylint MCP internally on `127.0.0.1:8001`; the DuckDuckGo MCP package is resolved with `uvx` and started internally on `127.0.0.1:8000`. The DuckDuckGo MCP source is not included in this repository.
+
+For the Render deployment, use the root-context Docker build and the combined supervisor described in [DEPLOYMENT.md](DEPLOYMENT.md). It starts Pylint MCP as a required internal service and DuckDuckGo MCP as a nonfatal internal service.
 
 ## API usage
 

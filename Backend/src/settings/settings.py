@@ -45,7 +45,6 @@ class Settings:
             "DB_PASSWORD": self.db_password,
             "DB_NAME_CHECKPOINT": self.db_name_checkpoint,
             "GROQ_API_KEY": self.groq_api_key,
-            "DUCK_DUCK_GO": self.duckduckgo,
             "PYLINT_MCP_SERVER_URL": self.pylint_mcp_server_url,
             "API_AUTH_TOKEN": self.api_auth_token,
         }

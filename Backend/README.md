@@ -166,7 +166,7 @@ Required settings:
 | `LOCAL_MODEL_MAX_NEW_TOKENS` | Maximum generated tokens (default `768`) |
 | `LOCAL_MODEL_DEVICE` | `cpu` by default; `auto` selects CUDA when available, otherwise CPU |
 | `LOCAL_MODEL_TIMEOUT` | Generation timeout in seconds (default `180`) |
-| `DUCK_DUCK_GO` | DuckDuckGo MCP streamable HTTP URL |
+| `DUCK_DUCK_GO` | Optional DuckDuckGo MCP streamable HTTP URL; research is unavailable when omitted |
 | `PYLINT_MCP_SERVER_URL` | Pylint MCP streamable HTTP URL |
 | `API_AUTH_TOKEN` | Bearer token; use a random secret of at least 32 characters |
 
@@ -200,7 +200,7 @@ Build from the repository root:
 docker build -t multiagent-code-pipeline .
 ```
 
-The default image installs the lightweight Groq-only dependency set. To build an image that supports local Qwen generation, use `--build-arg INSTALL_LOCAL_MODEL=true` and set `CODE_GENERATION_PROVIDER=local` at runtime.
+The production image installs the lightweight Groq-only dependency set and starts the backend plus the two internal MCP processes through `start_services.py`. Build it from the repository root with `docker build -f Backend/Dockerfile -t multiagent-code-pipeline .`. Pylint MCP is required; DuckDuckGo MCP is best effort so code-only workflows can start when research is unavailable.
 
 Run with the required settings supplied through your deployment platform's secret/environment configuration:
 
@@ -252,4 +252,4 @@ Run mocked tests with `uv sync --extra test --extra local-model --no-install-pro
 - Dependencies are declared in `pyproject.toml`; the Qwen/PEFT runtime is optional and is installed with `uv sync --extra local-model --no-install-project`.
 - `src.main:app` is the ASGI entry point used for local and Docker execution.
 - The `tests/` suite mocks model weights and external service calls; run it with `uv sync --extra test --extra local-model --no-install-project` and `uv run pytest`.
-- End-to-end verification requires the configured databases, Groq API, DuckDuckGo MCP, and pylint MCP services.
+- End-to-end verification requires the configured databases, Groq API, and Pylint MCP; research verification additionally requires DuckDuckGo MCP.

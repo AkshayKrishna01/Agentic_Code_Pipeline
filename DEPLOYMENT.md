@@ -2,6 +2,8 @@
 
 This guide describes a low-cost deployment using Groq for hosted code generation and local Qwen support for development.
 
+The Render deployment uses one Docker Web Service built from the repository root. That container runs FastAPI, the required Pylint MCP service, and the optional DuckDuckGo MCP service as supervised child processes.
+
 ## 1. Recommended architecture
 
 ```text
@@ -114,8 +116,8 @@ GROQ_API_KEY=your-groq-api-key
 GROQ_MODEL=openai/gpt-oss-120b
 CODE_GENERATION_PROVIDER=groq
 
-DUCK_DUCK_GO=https://your-duckduckgo-mcp.example.com/mcp
-PYLINT_MCP_SERVER_URL=https://your-pylint-mcp.example.com/mcp
+DUCK_DUCK_GO=http://127.0.0.1:8000/mcp
+PYLINT_MCP_SERVER_URL=http://127.0.0.1:8001/mcp
 PYLINT_WORKSPACE=/tmp/code-pipeline-review
 ```
 
@@ -210,7 +212,7 @@ Free Render services may sleep after inactivity. The first request after sleepin
 
 ## 6. Deploy the Pylint MCP service
 
-The backend's review agent writes a temporary Python file and sends its filesystem path to the Pylint MCP service. The Pylint service must be able to read that exact path.
+The backend's review agent writes a temporary Python file and sends its filesystem path to the Pylint MCP service. The Pylint service must be able to read that exact path. In the Render deployment, both processes run in the same container and share `/tmp/code-pipeline-review`.
 
 ### Same-machine deployment
 
@@ -228,7 +230,7 @@ PYLINT_WORKSPACE=/tmp/code-pipeline-review
 
 ### Separate cloud services
 
-A Render backend and a separate Render Pylint service do not share a filesystem. In that arrangement, the current file-path protocol fails because the path exists only inside the backend container.
+A Render backend and a separate Render Pylint service do not share a filesystem. In that arrangement, the current file-path protocol fails because the path exists only inside the backend container. The approved deployment does not create a separate Pylint service.
 
 Use one of these designs:
 
@@ -247,7 +249,7 @@ uv sync
 uv run python src\main.py
 ```
 
-The service uses streamable HTTP and normally exposes:
+The service uses streamable HTTP, binds to localhost only, and exposes:
 
 ```text
 http://localhost:8000/mcp
@@ -256,7 +258,7 @@ http://localhost:8000/mcp
 Use the actual exposed port in:
 
 ```env
-PYLINT_MCP_SERVER_URL=http://localhost:8000/mcp
+PYLINT_MCP_SERVER_URL=http://127.0.0.1:8001/mcp
 ```
 
 ## 7. Configure DuckDuckGo MCP
@@ -264,21 +266,49 @@ PYLINT_MCP_SERVER_URL=http://localhost:8000/mcp
 The research agent creates a streamable HTTP MCP client using `DUCK_DUCK_GO`:
 
 ```env
-DUCK_DUCK_GO=https://your-public-duckduckgo-mcp.example.com/mcp
+DUCK_DUCK_GO=http://127.0.0.1:8000/mcp
 ```
 
-The endpoint must:
+The internal endpoint must:
 
 - Be reachable from the backend host.
 - Support streamable HTTP MCP transport.
 - Expose the search tools expected by the research agent.
 - Use HTTPS when accessed from a hosted backend.
 
-The repository does not contain a DuckDuckGo MCP server, so you must supply or deploy a compatible service separately.
+The Render image resolves and starts the exact command below once at container startup:
 
-If the research MCP is unavailable, research-routed requests fail. Code-only requests may still work if the classifier selects `code` and the review service is available.
+```sh
+uvx duckduckgo-mcp-server --transport streamable-http --host 127.0.0.1 --port 8000
+```
 
-## 8. Deploy the frontend to Vercel
+The repository does not contain the DuckDuckGo MCP source; `uvx` resolves the package from its package index. The supervisor performs an MCP `initialize` and `list_tools` check. DuckDuckGo is nonfatal: if it cannot start or pass readiness, FastAPI still starts and research requests report an availability error.
+
+If the research MCP is unavailable, research-routed requests fail with a logged availability error. Code-only requests may still work if the classifier selects `code` and the review service is available.
+
+## 8. Build and run the combined Docker image
+
+The Docker build context must be the repository root so the image can copy both `Backend/` and `pylint/pylint_mcp/`:
+
+```powershell
+docker build -f Backend\Dockerfile -t codepilot-backend .
+docker run --rm -p 8080:8080 --env-file Backend\deployment.env codepilot-backend
+```
+
+The image keeps the two Python projects isolated. Each project is installed from its own `pyproject.toml` and `uv.lock`; their lockfiles are not merged. The production image does not install the optional Qwen dependency group.
+
+Startup sequence:
+
+1. Create `/tmp/code-pipeline-review`.
+2. Start Pylint MCP on `127.0.0.1:8001`.
+3. Perform MCP `initialize` and `list_tools`; failure stops the container.
+4. Start DuckDuckGo MCP with the exact `uvx` command; failure is logged but does not stop the container.
+5. Start FastAPI on `0.0.0.0:$PORT`.
+6. Monitor processes and clean up all children on SIGTERM or SIGINT.
+
+Only FastAPI's port is exposed publicly. MCP ports are internal.
+
+## 9. Deploy the frontend to Vercel
 
 1. Create a Vercel project from the GitHub repository.
 2. Set the root directory to:
@@ -321,7 +351,7 @@ CORS_ORIGINS=https://your-project.vercel.app
 
 Redeploy the backend after changing CORS.
 
-## 9. Local development commands
+## 10. Local development commands
 
 ### Local Qwen backend
 
@@ -355,7 +385,7 @@ Set:
 VITE_API_BASE_URL=http://localhost:8080/api/v1/agentic
 ```
 
-## 10. Deployment troubleshooting
+## 11. Deployment troubleshooting
 
 ### `Missing required environment variables`
 
@@ -370,7 +400,6 @@ DB_USERNAME
 DB_PASSWORD
 DB_NAME_CHECKPOINT
 GROQ_API_KEY
-DUCK_DUCK_GO
 PYLINT_MCP_SERVER_URL
 API_AUTH_TOKEN
 ```
@@ -454,13 +483,13 @@ For Groq mode, the main causes are usually a sleeping backend, Groq rate limits,
 
 ### Research requests fail
 
-Check that `DUCK_DUCK_GO` is a public HTTPS streamable HTTP MCP URL. Test that the endpoint is reachable from the deployed backend, not just from your laptop.
+Check that the in-container `DUCK_DUCK_GO` endpoint is `http://127.0.0.1:8000/mcp` and that the DuckDuckGo process passed the supervisor's MCP readiness check. Research remains unavailable when that process cannot start.
 
 ### Review requests fail
 
-Check that `PYLINT_MCP_SERVER_URL` is reachable and that the Pylint service can read `PYLINT_WORKSPACE`. Separate cloud containers cannot read each other's temporary files without a shared storage design.
+Check that `PYLINT_MCP_SERVER_URL=http://127.0.0.1:8001/mcp` is reachable and that the Pylint service can read `PYLINT_WORKSPACE`. The approved Render image runs both processes in one container, so the file path is shared.
 
-## 11. Security checklist
+## 12. Security checklist
 
 - Keep `.env` files out of Git.
 - Store secrets in Render/Vercel secret settings.
@@ -473,17 +502,16 @@ Check that `PYLINT_MCP_SERVER_URL` is reachable and that the Pylint service can 
 - Use a restricted PostgreSQL user rather than an administrator account.
 - Monitor free-tier quotas and rate limits.
 
-## 12. Recommended first deployment
+## 13. Recommended first deployment
 
 For the first working hosted demo:
 
 1. Create Neon PostgreSQL.
-2. Deploy the backend with `CODE_GENERATION_PROVIDER=groq`.
+2. Deploy the combined root-context Docker service with `CODE_GENERATION_PROVIDER=groq`.
 3. Confirm `/health/live`.
 4. Confirm `/health/ready`.
-5. Deploy a reachable Pylint MCP service on the same host as the backend, or temporarily replace the MCP review integration with in-process Pylint.
-6. Configure a public DuckDuckGo MCP endpoint, or temporarily disable research requests.
+5. Confirm the required in-container Pylint MCP passes protocol readiness.
+6. Confirm the optional in-container DuckDuckGo MCP passes protocol readiness, or accept that research requests will be unavailable.
 7. Deploy the frontend.
 8. Configure CORS with the final frontend URL.
 9. Send a code-generation request and inspect backend logs before testing research and review flows.
-

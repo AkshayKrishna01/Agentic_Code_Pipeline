@@ -3,23 +3,32 @@ FROM python:3.14-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     UV_COMPILE_BYTECODE=1 \
-    UV_LINK_MODE=copy
+    UV_LINK_MODE=copy \
+    UV_CACHE_DIR=/opt/uv-cache
 
 WORKDIR /app
 
-ARG INSTALL_LOCAL_MODEL=false
-
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
-COPY pyproject.toml uv.lock README.md ./
-RUN if [ "$INSTALL_LOCAL_MODEL" = "true" ]; then \
-        uv sync --no-install-project --no-dev --extra local-model; \
-    else \
-        uv sync --no-install-project --no-dev; \
-    fi
 
-COPY --chown=10001:10001 src ./src
-COPY --chown=10001:10001 adapter ./adapter
+COPY Backend/pyproject.toml Backend/uv.lock Backend/README.md /app/backend/
+RUN cd /app/backend && uv sync --frozen --no-install-project --no-dev
+
+COPY pylint/pylint_mcp/pyproject.toml pylint/pylint_mcp/uv.lock pylint/pylint_mcp/README.md /app/pylint-mcp/
+RUN cd /app/pylint-mcp && uv sync --frozen --no-install-project --no-dev
+
+RUN uvx duckduckgo-mcp-server --help >/dev/null
+
+COPY Backend/src /app/backend/src
+COPY Backend/start_services.py /app/backend/start_services.py
+COPY pylint/pylint_mcp/src /app/pylint-mcp/src
+
+RUN mkdir -p /tmp/code-pipeline-review /opt/uv-cache \
+    && chmod -R a+rX /app \
+    && chmod -R a+rwX /opt/uv-cache \
+    && chmod a+rwx /tmp/code-pipeline-review
+
+WORKDIR /app/backend
+EXPOSE 8080
 USER 10001:10001
 
-EXPOSE 8080
-CMD ["/app/.venv/bin/uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["/app/backend/.venv/bin/python", "/app/backend/start_services.py"]

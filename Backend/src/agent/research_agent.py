@@ -48,6 +48,10 @@ class ResearchAgent:
     async def ask(self,question: str,review_comments:str) -> str:
             try:
                 logger.info(f"Customer: {question}")
+                if not settings.duckduckgo:
+                    raise RuntimeError(
+                        "Research is unavailable because DUCK_DUCK_GO is not configured"
+                    )
 
                 client = MultiServerMCPClient(
                     {
