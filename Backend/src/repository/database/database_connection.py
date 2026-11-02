@@ -14,7 +14,7 @@ class Database:
         password = (settings.db_password)
  
         db_url = URL.create(
-            "postgresql+psycopg2",
+            "postgresql+psycopg",
             username=settings.db_username,
             password=password,
             host=settings.db_host,
