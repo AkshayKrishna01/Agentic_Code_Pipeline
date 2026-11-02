@@ -284,6 +284,11 @@ uvx duckduckgo-mcp-server --transport streamable-http --host 127.0.0.1 --port 80
 
 The repository does not contain the DuckDuckGo MCP source; `uvx` resolves the package from its package index. The supervisor performs an MCP `initialize` and `list_tools` check. DuckDuckGo is nonfatal: if it cannot start or pass readiness, FastAPI still starts and research requests report an availability error.
 
+The production image configures `UV_TOOL_DIR=/opt/uv-tools` and grants the
+unprivileged container user write access to that directory. This is required
+because `uvx` installs its runtime tool there; using its default `/.local`
+directory causes `Permission denied` errors on Render.
+
 If the research MCP is unavailable, research-routed requests fail with a logged availability error. Code-only requests may still work if the classifier selects `code` and the review service is available.
 
 ## 8. Build and run the combined Docker image
